@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+*.user
+
+# Node kopru
+bridge/node_modules/
+bridge/.wwebjs_auth/
+bridge/.wwebjs_cache/
+bridge/.env
+
+# Token / gizli bilgi asla depoya girmesin
+settings.json
+*.token
