@@ -1,11 +1,7 @@
-using WhatsAppSenderDemo.Models;
+﻿using WhatsAppSenderDemo.Models;
 
 namespace WhatsAppSenderDemo.Services;
 
-/// <summary>
-/// Coklu (toplu) gonderim motoru: sirayla gonderir, bekler,
-/// gecici hatalarda yeniden dener, ilerlemeyi bildirir, iptal edilebilir.
-/// </summary>
 public sealed class BulkSender
 {
     private readonly IWhatsAppSender _sender;
@@ -18,8 +14,6 @@ public sealed class BulkSender
         _settings = settings;
     }
 
-    /// <param name="messageTemplate">{ad} / {tel} yer tutucusu icerebilen metin.</param>
-    /// <param name="templateOptions">Cloud API sablon modu icin (null ise duz metin).</param>
     public async Task<(int Sent, int Failed)> RunAsync(
         IReadOnlyList<Recipient> recipients,
         string messageTemplate,
@@ -43,8 +37,8 @@ public sealed class BulkSender
                     Phone = r.RawPhone,
                     Name = r.Name,
                     Success = false,
-                    Status = "Atlandi",
-                    Error = r.ValidationError ?? "Gecersiz numara"
+                    Status = "Atlandı",
+                    Error = r.ValidationError ?? "Geçersiz numara"
                 });
                 continue;
             }
@@ -65,14 +59,13 @@ public sealed class BulkSender
                     .ToList();
             }
 
-            SendOutcome outcome = SendOutcome.Fail("baslatilmadi");
+            SendOutcome outcome = SendOutcome.Fail("Başlatılmadı");
 
             for (var attempt = 0; attempt <= _settings.MaxRetry; attempt++)
             {
                 outcome = await _sender.SendAsync(msg, ct).ConfigureAwait(false);
                 if (outcome.Success || !outcome.Retryable) break;
 
-                // Ustel bekleme: 2sn, 4sn, 8sn...
                 var backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
                 await Task.Delay(backoff, ct).ConfigureAwait(false);
             }
@@ -85,12 +78,11 @@ public sealed class BulkSender
                 Phone = r.Phone,
                 Name = r.Name,
                 Success = outcome.Success,
-                Status = outcome.Success ? "Gonderildi" : "Hata",
+                Status = outcome.Success ? "Gönderildi" : "Hata",
                 MessageId = outcome.MessageId ?? "",
                 Error = outcome.Error ?? ""
             });
 
-            // Son aliciysa bekleme
             if (index < recipients.Count)
             {
                 var wait = _settings.DelayMs + _rnd.Next(0, Math.Max(1, _settings.JitterMs));

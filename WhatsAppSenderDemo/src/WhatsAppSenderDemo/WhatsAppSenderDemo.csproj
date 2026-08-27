@@ -10,10 +10,10 @@
     <AssemblyName>WhatsAppSenderDemo</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <LangVersion>latest</LangVersion>
+    <CodePage>65001</CodePage>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Access token'i Windows DPAPI ile sifreleyerek diske yazmak icin -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 

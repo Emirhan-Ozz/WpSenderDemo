@@ -1,20 +1,18 @@
-using System.Text;
+﻿using System.Text;
 using WhatsAppSenderDemo.Models;
 using WhatsAppSenderDemo.Services;
 
 namespace WhatsAppSenderDemo;
 
-/// <summary>
-/// Tek formluk demo. Arayuz tamamen kod ile kuruluyor; boylece projeyi
-/// acar acmaz calisir, Designer dosyasi ile ugrasmaniza gerek kalmaz.
-/// </summary>
 public sealed class MainForm : Form
 {
-    // --- Durum ---
     private AppSettings _settings = SettingsStore.Load();
     private CancellationTokenSource? _cts;
 
-    // --- Gonderim sekmesi kontrolleri ---
+    private readonly WebhookServer _webhook = new();
+    private readonly Dictionary<string, int> _rowByMessageId = new(StringComparer.Ordinal);
+
+    private TabControl tabs = null!;
     private TextBox txtRecipients = null!;
     private TextBox txtMessage = null!;
     private Label lblRecipientCount = null!;
@@ -31,7 +29,6 @@ public sealed class MainForm : Form
     private DataGridView dgv = null!;
     private ToolStripStatusLabel lblStatus = null!;
 
-    // --- Ayarlar sekmesi kontrolleri ---
     private TextBox txtPhoneNumberId = null!;
     private TextBox txtAccessToken = null!;
     private TextBox txtApiVersion = null!;
@@ -41,32 +38,36 @@ public sealed class MainForm : Form
     private NumericUpDown numJitter = null!;
     private NumericUpDown numRetry = null!;
 
+    private NumericUpDown numWebhookPort = null!;
+    private TextBox txtWebhookToken = null!;
+    private TextBox txtWebhookLog = null!;
+    private Button btnWebhookToggle = null!;
+    private Label lblWebhookState = null!;
+
     public MainForm()
     {
-        Text = "WhatsApp Toplu Mesaj Demo";
+        Text = "WhatsApp Toplu Mesaj";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(1060, 740);
-        MinimumSize = new Size(900, 640);
-        Font = new Font("Segoe UI", 9F);
+        ClientSize = new Size(1080, 760);
+        MinimumSize = new Size(940, 660);
+        Font = Theme.Body;
+        BackColor = Theme.Background;
 
         BuildUi();
         LoadSettingsToUi();
         UpdateRecipientCount();
         UpdateProviderUi();
+        WireWebhook();
     }
 
-    // ==================================================================
-    //  ARAYUZ
-    // ==================================================================
     private void BuildUi()
     {
-        var tabs = new TabControl { Dock = DockStyle.Fill };
+        tabs = new TabControl { Dock = DockStyle.Fill, Font = Theme.Body };
         tabs.TabPages.Add(BuildSendTab());
         tabs.TabPages.Add(BuildSettingsTab());
-        tabs.TabPages.Add(BuildHelpTab());
 
-        var status = new StatusStrip();
-        lblStatus = new ToolStripStatusLabel("Hazir");
+        var status = new StatusStrip { BackColor = Theme.GridHeader, SizingGrip = false };
+        lblStatus = new ToolStripStatusLabel("Hazır") { ForeColor = Theme.Heading };
         status.Items.Add(lblStatus);
 
         Controls.Add(tabs);
@@ -75,192 +76,221 @@ public sealed class MainForm : Form
 
     private TabPage BuildSendTab()
     {
-        var page = new TabPage("Gonderim") { Padding = new Padding(8) };
-
-        var root = new TableLayoutPanel
+        var page = new TabPage("Gönderim")
         {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 3
+            Padding = new Padding(10),
+            BackColor = Theme.Background
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 132));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
 
-        // ---------- Ust: alicilar + mesaj ----------
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
+
         var top = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
         top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
         top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
 
-        // --- Alicilar kutusu ---
-        var grpTo = new GroupBox { Text = "Alicilar", Dock = DockStyle.Fill, Padding = new Padding(8) };
+        var grpTo = Theme.Group("Alıcılar");
+        grpTo.Dock = DockStyle.Fill;
 
         txtRecipients = new TextBox
         {
             Multiline = true,
             Dock = DockStyle.Fill,
             ScrollBars = ScrollBars.Vertical,
-            Font = new Font("Consolas", 9.5F),
-            PlaceholderText = "05321234567;Ahmet\r\n905331112233;Ayse\r\n# satir basina bir numara",
+            Font = Theme.Mono,
+            BorderStyle = BorderStyle.FixedSingle,
+            PlaceholderText = "05321234567;Ahmet",
             WordWrap = false
         };
+        Theme.StyleInput(txtRecipients);
+        txtRecipients.Font = Theme.Mono;
         txtRecipients.TextChanged += (_, _) => UpdateRecipientCount();
 
         var toButtons = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 34,
-            FlowDirection = FlowDirection.LeftToRight
+            Height = 40,
+            BackColor = Theme.Surface,
+            Padding = new Padding(0, 6, 0, 0)
         };
-        var btnImport = new Button { Text = "Dosyadan yukle...", AutoSize = true };
+        var btnImport = Theme.SoftButton("Dosyadan Yükle");
         btnImport.Click += BtnImport_Click;
-        var btnClear = new Button { Text = "Temizle", AutoSize = true };
+        var btnClear = Theme.SoftButton("Temizle");
         btnClear.Click += (_, _) => txtRecipients.Clear();
-        lblRecipientCount = new Label { Text = "0 alici", AutoSize = true, Padding = new Padding(10, 8, 0, 0) };
-        toButtons.Controls.AddRange(new Control[] { btnImport, btnClear, lblRecipientCount });
-
-        var toHint = new Label
+        lblRecipientCount = new Label
         {
-            Dock = DockStyle.Top,
-            Height = 32,
-            ForeColor = SystemColors.GrayText,
-            Text = "Bicim:  numara  veya  numara;Ad\r\nUlke kodu yoksa Ayarlar'daki kod otomatik eklenir."
+            Text = "0 alıcı",
+            AutoSize = true,
+            ForeColor = Theme.Muted,
+            Padding = new Padding(12, 8, 0, 0)
         };
+        toButtons.Controls.AddRange(new Control[] { btnImport, btnClear, lblRecipientCount });
 
         grpTo.Controls.Add(txtRecipients);
         grpTo.Controls.Add(toButtons);
-        grpTo.Controls.Add(toHint);
 
-        // --- Mesaj kutusu ---
-        var grpMsg = new GroupBox { Text = "Mesaj", Dock = DockStyle.Fill, Padding = new Padding(8) };
+        var grpMsg = Theme.Group("Mesaj");
+        grpMsg.Dock = DockStyle.Fill;
 
         txtMessage = new TextBox
         {
             Multiline = true,
             Dock = DockStyle.Fill,
             ScrollBars = ScrollBars.Vertical,
-            PlaceholderText = "Merhaba {ad}, bu bir test mesajidir."
+            BorderStyle = BorderStyle.FixedSingle,
+            PlaceholderText = "Merhaba {ad}, ..."
         };
+        Theme.StyleInput(txtMessage);
         txtMessage.TextChanged += (_, _) =>
-            lblCharCount.Text = $"{txtMessage.TextLength} karakter (limit 4096)";
+            lblCharCount.Text = $"{txtMessage.TextLength} / 4096 karakter";
 
-        lblCharCount = new Label { Dock = DockStyle.Bottom, Height = 20, Text = "0 karakter (limit 4096)" };
-
-        var msgHint = new Label
+        lblCharCount = new Label
         {
-            Dock = DockStyle.Top,
-            Height = 32,
-            ForeColor = SystemColors.GrayText,
-            Text = "Yer tutucular: {ad} -> alicinin adi, {tel} -> numarasi.\r\n" +
-                   "Cloud API'de serbest metin yalnizca 24 saatlik pencere ACIKKEN gider."
+            Dock = DockStyle.Bottom,
+            Height = 24,
+            Text = "0 / 4096 karakter",
+            ForeColor = Theme.Muted,
+            Padding = new Padding(0, 6, 0, 0)
         };
 
         grpMsg.Controls.Add(txtMessage);
         grpMsg.Controls.Add(lblCharCount);
-        grpMsg.Controls.Add(msgHint);
 
         top.Controls.Add(grpTo, 0, 0);
         top.Controls.Add(grpMsg, 1, 0);
 
-        // ---------- Orta: kontrol paneli ----------
-        var mid = new GroupBox { Text = "Gonderim", Dock = DockStyle.Fill, Padding = new Padding(8) };
-        var midPanel = new Panel { Dock = DockStyle.Fill };
+        var mid = Theme.Group("Gönderim Ayarları");
+        mid.Dock = DockStyle.Fill;
+        var midPanel = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
 
-        midPanel.Controls.Add(new Label { Text = "Yontem:", Left = 6, Top = 10, Width = 60, TextAlign = ContentAlignment.MiddleLeft });
+        midPanel.Controls.Add(new Label
+        {
+            Text = "Yöntem", Left = 4, Top = 10, Width = 55, ForeColor = Theme.Heading
+        });
         cmbProvider = new ComboBox
         {
-            Left = 70, Top = 6, Width = 300,
-            DropDownStyle = ComboBoxStyle.DropDownList
+            Left = 62, Top = 6, Width = 310,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Surface
         };
         cmbProvider.Items.AddRange(new object[]
         {
-            new ProviderItem("cloud",  "1) Meta Cloud API (resmi)"),
-            new ProviderItem("bridge", "2) Yerel kopru / whatsapp-web.js (ucretsiz)"),
-            new ProviderItem("walink", "3) wa.me baglantisi (yari otomatik)")
+            new ProviderItem("cloud",  "Meta Cloud API"),
+            new ProviderItem("bridge", "Yerel Köprü (whatsapp-web.js)"),
+            new ProviderItem("walink", "wa.me Bağlantısı")
         });
         cmbProvider.SelectedIndexChanged += (_, _) => UpdateProviderUi();
         midPanel.Controls.Add(cmbProvider);
 
-        midPanel.Controls.Add(new Label { Text = "Mesaj arasi bekleme (ms):", Left = 390, Top = 10, Width = 150 });
+        midPanel.Controls.Add(new Label
+        {
+            Text = "Bekleme (ms)", Left = 392, Top = 10, Width = 90, ForeColor = Theme.Heading
+        });
         numDelay = new NumericUpDown
         {
-            Left = 545, Top = 6, Width = 90,
-            Minimum = 0, Maximum = 600000, Increment = 500, Value = 4000
+            Left = 486, Top = 6, Width = 90,
+            Minimum = 0, Maximum = 600000, Increment = 500, Value = 4000,
+            BorderStyle = BorderStyle.FixedSingle
         };
         midPanel.Controls.Add(numDelay);
 
         chkTemplate = new CheckBox
         {
-            Text = "Sablon (template) mesaji gonder",
-            Left = 6, Top = 44, Width = 230
+            Text = "Şablon mesajı gönder",
+            Left = 4, Top = 46, Width = 165,
+            ForeColor = Theme.Heading
         };
         chkTemplate.CheckedChanged += (_, _) => UpdateProviderUi();
         midPanel.Controls.Add(chkTemplate);
 
-        midPanel.Controls.Add(new Label { Text = "Ad:", Left = 240, Top = 46, Width = 26 });
-        txtTemplateName = new TextBox { Left = 268, Top = 42, Width = 130, Text = "hello_world" };
+        midPanel.Controls.Add(new Label { Text = "Ad", Left = 178, Top = 48, Width = 24, ForeColor = Theme.Heading });
+        txtTemplateName = new TextBox { Left = 204, Top = 44, Width = 150, BorderStyle = BorderStyle.FixedSingle };
         midPanel.Controls.Add(txtTemplateName);
 
-        midPanel.Controls.Add(new Label { Text = "Dil:", Left = 404, Top = 46, Width = 26 });
-        txtTemplateLang = new TextBox { Left = 432, Top = 42, Width = 60, Text = "en_US" };
+        midPanel.Controls.Add(new Label { Text = "Dil", Left = 364, Top = 48, Width = 24, ForeColor = Theme.Heading });
+        txtTemplateLang = new TextBox { Left = 390, Top = 44, Width = 60, BorderStyle = BorderStyle.FixedSingle, Text = "tr" };
         midPanel.Controls.Add(txtTemplateLang);
 
-        midPanel.Controls.Add(new Label { Text = "Parametreler ( | ile ayirin):", Left = 500, Top = 46, Width = 145 });
-        txtTemplateParams = new TextBox { Left = 648, Top = 42, Width = 200, PlaceholderText = "{ad}|12.05.2026" };
+        midPanel.Controls.Add(new Label { Text = "Parametreler", Left = 462, Top = 48, Width = 82, ForeColor = Theme.Heading });
+        txtTemplateParams = new TextBox
+        {
+            Left = 548, Top = 44, Width = 220,
+            BorderStyle = BorderStyle.FixedSingle,
+            PlaceholderText = "{ad}|12345"
+        };
         midPanel.Controls.Add(txtTemplateParams);
 
-        btnSend = new Button
-        {
-            Text = "GONDER",
-            Left = 660, Top = 2, Width = 120, Height = 32,
-            BackColor = Color.FromArgb(37, 211, 102),
-            FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI", 9.5F, FontStyle.Bold)
-        };
+        btnSend = Theme.PrimaryButton("Gönder");
+        btnSend.SetBounds(806, 4, 120, 34);
+        btnSend.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         btnSend.Click += BtnSend_Click;
         midPanel.Controls.Add(btnSend);
 
-        btnStop = new Button { Text = "Durdur", Left = 790, Top = 2, Width = 90, Height = 32, Enabled = false };
+        btnStop = Theme.DangerButton("Durdur");
+        btnStop.SetBounds(806, 44, 120, 30);
+        btnStop.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        btnStop.Enabled = false;
         btnStop.Click += (_, _) => _cts?.Cancel();
         midPanel.Controls.Add(btnStop);
 
-        progress = new ProgressBar { Left = 6, Top = 78, Width = 1000, Height = 18, Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right };
+        progress = new ProgressBar
+        {
+            Left = 4, Top = 84, Width = 920, Height = 14,
+            Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right,
+            ForeColor = Theme.Primary,
+            Style = ProgressBarStyle.Continuous
+        };
         midPanel.Controls.Add(progress);
 
         mid.Controls.Add(midPanel);
 
-        // ---------- Alt: sonuc tablosu ----------
-        var grpLog = new GroupBox { Text = "Sonuclar", Dock = DockStyle.Fill, Padding = new Padding(8) };
+        var grpLog = Theme.Group("Sonuçlar");
+        grpLog.Dock = DockStyle.Fill;
+
         dgv = new DataGridView
         {
             Dock = DockStyle.Fill,
             AllowUserToAddRows = false,
             AllowUserToDeleteRows = false,
+            AllowUserToResizeRows = false,
             ReadOnly = true,
             RowHeadersVisible = false,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
         };
+        Theme.StyleGrid(dgv);
+
         dgv.Columns.Add("c_no", "#");
         dgv.Columns.Add("c_time", "Saat");
         dgv.Columns.Add("c_phone", "Numara");
         dgv.Columns.Add("c_name", "Ad");
         dgv.Columns.Add("c_status", "Durum");
-        dgv.Columns.Add("c_id", "Mesaj ID");
-        dgv.Columns.Add("c_error", "Aciklama");
-        dgv.Columns["c_no"]!.FillWeight = 25;
-        dgv.Columns["c_time"]!.FillWeight = 45;
+        dgv.Columns.Add("c_delivery", "Teslim");
+        dgv.Columns.Add("c_id", "Mesaj Kimliği");
+        dgv.Columns.Add("c_error", "Açıklama");
+        dgv.Columns["c_no"]!.FillWeight = 24;
+        dgv.Columns["c_time"]!.FillWeight = 44;
         dgv.Columns["c_phone"]!.FillWeight = 80;
         dgv.Columns["c_name"]!.FillWeight = 70;
-        dgv.Columns["c_status"]!.FillWeight = 55;
-        dgv.Columns["c_id"]!.FillWeight = 110;
-        dgv.Columns["c_error"]!.FillWeight = 180;
+        dgv.Columns["c_status"]!.FillWeight = 56;
+        dgv.Columns["c_delivery"]!.FillWeight = 60;
+        dgv.Columns["c_id"]!.FillWeight = 96;
+        dgv.Columns["c_error"]!.FillWeight = 150;
 
-        var logButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 34 };
-        var btnExport = new Button { Text = "CSV olarak kaydet", AutoSize = true };
+        var logButtons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 40,
+            BackColor = Theme.Surface,
+            Padding = new Padding(0, 6, 0, 0)
+        };
+        var btnExport = Theme.SoftButton("CSV Olarak Kaydet");
         btnExport.Click += BtnExport_Click;
-        var btnClearLog = new Button { Text = "Listeyi temizle", AutoSize = true };
-        btnClearLog.Click += (_, _) => dgv.Rows.Clear();
+        var btnClearLog = Theme.SoftButton("Listeyi Temizle");
+        btnClearLog.Click += (_, _) => { dgv.Rows.Clear(); _rowByMessageId.Clear(); };
         logButtons.Controls.AddRange(new Control[] { btnExport, btnClearLog });
 
         grpLog.Controls.Add(dgv);
@@ -275,137 +305,143 @@ public sealed class MainForm : Form
 
     private TabPage BuildSettingsTab()
     {
-        var page = new TabPage("Ayarlar") { Padding = new Padding(12), AutoScroll = true };
+        var page = new TabPage("Ayarlar")
+        {
+            Padding = new Padding(14),
+            AutoScroll = true,
+            BackColor = Theme.Background
+        };
         int y = 10;
 
-        // --- Cloud API ---
-        var grpCloud = new GroupBox { Text = "Meta Cloud API (resmi yontem)", Left = 10, Top = y, Width = 900, Height = 175 };
-        grpCloud.Controls.Add(new Label { Text = "Phone Number ID", Left = 14, Top = 30, Width = 190 });
-        txtPhoneNumberId = new TextBox { Left = 210, Top = 26, Width = 320 };
+        var grpCloud = Theme.Group("Meta Cloud API");
+        grpCloud.SetBounds(10, y, 920, 150);
+
+        grpCloud.Controls.Add(new Label { Text = "Telefon Numarası Kimliği", Left = 16, Top = 34, Width = 180, ForeColor = Theme.Heading });
+        txtPhoneNumberId = new TextBox { Left = 204, Top = 30, Width = 320, BorderStyle = BorderStyle.FixedSingle };
         grpCloud.Controls.Add(txtPhoneNumberId);
 
-        grpCloud.Controls.Add(new Label { Text = "Access Token", Left = 14, Top = 64, Width = 190 });
-        txtAccessToken = new TextBox { Left = 210, Top = 60, Width = 560, UseSystemPasswordChar = true };
+        grpCloud.Controls.Add(new Label { Text = "Erişim Anahtarı", Left = 16, Top = 70, Width = 180, ForeColor = Theme.Heading });
+        txtAccessToken = new TextBox { Left = 204, Top = 66, Width = 560, UseSystemPasswordChar = true, BorderStyle = BorderStyle.FixedSingle };
         grpCloud.Controls.Add(txtAccessToken);
-        var chkShow = new CheckBox { Text = "Goster", Left = 780, Top = 62, Width = 70 };
+        var chkShow = new CheckBox { Text = "Göster", Left = 774, Top = 68, Width = 70, ForeColor = Theme.Heading };
         chkShow.CheckedChanged += (_, _) => txtAccessToken.UseSystemPasswordChar = !chkShow.Checked;
         grpCloud.Controls.Add(chkShow);
 
-        grpCloud.Controls.Add(new Label { Text = "Graph API surumu", Left = 14, Top = 98, Width = 190 });
-        txtApiVersion = new TextBox { Left = 210, Top = 94, Width = 100, Text = "v21.0" };
+        grpCloud.Controls.Add(new Label { Text = "Graph API Sürümü", Left = 16, Top = 106, Width = 180, ForeColor = Theme.Heading });
+        txtApiVersion = new TextBox { Left = 204, Top = 102, Width = 100, Text = "v21.0", BorderStyle = BorderStyle.FixedSingle };
         grpCloud.Controls.Add(txtApiVersion);
 
-        var btnTestCloud = new Button { Text = "Baglantiyi test et", Left = 330, Top = 92, Width = 140 };
+        var btnTestCloud = Theme.SoftButton("Bağlantıyı Test Et");
+        btnTestCloud.SetBounds(324, 100, 150, 28);
         btnTestCloud.Click += BtnTestCloud_Click;
         grpCloud.Controls.Add(btnTestCloud);
 
-        grpCloud.Controls.Add(new Label
-        {
-            Left = 14, Top = 130, Width = 860, Height = 34, ForeColor = SystemColors.GrayText,
-            Text = "developers.facebook.com > uygulamaniz > WhatsApp > API Setup ekranindan alinir. " +
-                   "Gecici token 24 saat gecerlidir; kalici token icin System User olusturun."
-        });
         page.Controls.Add(grpCloud);
-        y += 185;
+        y += 162;
 
-        // --- Kopru ---
-        var grpBridge = new GroupBox { Text = "Yerel kopru (whatsapp-web.js) - ucretsiz yontem", Left = 10, Top = y, Width = 900, Height = 145 };
-        grpBridge.Controls.Add(new Label { Text = "Kopru adresi", Left = 14, Top = 30, Width = 190 });
-        txtBridgeUrl = new TextBox { Left = 210, Top = 26, Width = 320, Text = "http://localhost:3000" };
+        var grpBridge = Theme.Group("Yerel Köprü");
+        grpBridge.SetBounds(10, y, 920, 112);
+
+        grpBridge.Controls.Add(new Label { Text = "Köprü Adresi", Left = 16, Top = 34, Width = 180, ForeColor = Theme.Heading });
+        txtBridgeUrl = new TextBox { Left = 204, Top = 30, Width = 320, Text = "http://localhost:3000", BorderStyle = BorderStyle.FixedSingle };
         grpBridge.Controls.Add(txtBridgeUrl);
 
-        grpBridge.Controls.Add(new Label { Text = "API anahtari", Left = 14, Top = 64, Width = 190 });
-        txtBridgeKey = new TextBox { Left = 210, Top = 60, Width = 320 };
+        grpBridge.Controls.Add(new Label { Text = "API Anahtarı", Left = 16, Top = 70, Width = 180, ForeColor = Theme.Heading });
+        txtBridgeKey = new TextBox { Left = 204, Top = 66, Width = 320, BorderStyle = BorderStyle.FixedSingle };
         grpBridge.Controls.Add(txtBridgeKey);
 
-        var btnTestBridge = new Button { Text = "Kopru durumunu sorgula", Left = 545, Top = 58, Width = 180 };
+        var btnTestBridge = Theme.SoftButton("Köprü Durumunu Sorgula");
+        btnTestBridge.SetBounds(542, 64, 190, 28);
         btnTestBridge.Click += BtnTestBridge_Click;
         grpBridge.Controls.Add(btnTestBridge);
 
-        grpBridge.Controls.Add(new Label
-        {
-            Left = 14, Top = 98, Width = 860, Height = 34, ForeColor = SystemColors.GrayText,
-            Text = "bridge klasorunde 'npm install' ve 'npm start' calistirin, terminaldeki QR kodu " +
-                   "telefonunuzdaki WhatsApp > Bagli cihazlar ile okutun."
-        });
         page.Controls.Add(grpBridge);
-        y += 155;
+        y += 124;
 
-        // --- Genel ---
-        var grpGen = new GroupBox { Text = "Genel", Left = 10, Top = y, Width = 900, Height = 130 };
-        grpGen.Controls.Add(new Label { Text = "Varsayilan ulke kodu", Left = 14, Top = 30, Width = 190 });
-        txtCountryCode = new TextBox { Left = 210, Top = 26, Width = 80, Text = "90" };
+        var grpHook = Theme.Group("Webhook");
+        grpHook.SetBounds(10, y, 920, 240);
+
+        grpHook.Controls.Add(new Label { Text = "Yerel Port", Left = 16, Top = 34, Width = 180, ForeColor = Theme.Heading });
+        numWebhookPort = new NumericUpDown
+        {
+            Left = 204, Top = 30, Width = 90,
+            Minimum = 1024, Maximum = 65535, Value = 5005,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+        grpHook.Controls.Add(numWebhookPort);
+
+        grpHook.Controls.Add(new Label { Text = "Doğrulama Anahtarı", Left = 320, Top = 34, Width = 130, ForeColor = Theme.Heading });
+        txtWebhookToken = new TextBox { Left = 452, Top = 30, Width = 220, Text = "winformdemo-gizli", BorderStyle = BorderStyle.FixedSingle };
+        grpHook.Controls.Add(txtWebhookToken);
+
+        btnWebhookToggle = Theme.SoftButton("Webhook'u Başlat");
+        btnWebhookToggle.SetBounds(690, 28, 160, 28);
+        btnWebhookToggle.Click += BtnWebhookToggle_Click;
+        grpHook.Controls.Add(btnWebhookToggle);
+
+        lblWebhookState = new Label
+        {
+            Left = 16, Top = 66, Width = 880, Height = 18,
+            Text = "Durum: kapalı",
+            ForeColor = Theme.Muted
+        };
+        grpHook.Controls.Add(lblWebhookState);
+
+        txtWebhookLog = new TextBox
+        {
+            Left = 16, Top = 92, Width = 880, Height = 132,
+            Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
+            Font = new Font("Consolas", 8.5F),
+            BackColor = Theme.Surface,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+        grpHook.Controls.Add(txtWebhookLog);
+
+        page.Controls.Add(grpHook);
+        y += 252;
+
+        var grpGen = Theme.Group("Genel");
+        grpGen.SetBounds(10, y, 920, 140);
+
+        grpGen.Controls.Add(new Label { Text = "Varsayılan Ülke Kodu", Left = 16, Top = 34, Width = 180, ForeColor = Theme.Heading });
+        txtCountryCode = new TextBox { Left = 204, Top = 30, Width = 80, Text = "90", BorderStyle = BorderStyle.FixedSingle };
         grpGen.Controls.Add(txtCountryCode);
 
-        grpGen.Controls.Add(new Label { Text = "Rastgele sapma (ms)", Left = 14, Top = 64, Width = 190 });
-        numJitter = new NumericUpDown { Left = 210, Top = 60, Width = 90, Minimum = 0, Maximum = 60000, Increment = 250, Value = 2000 };
+        grpGen.Controls.Add(new Label { Text = "Rastgele Sapma (ms)", Left = 16, Top = 70, Width = 180, ForeColor = Theme.Heading });
+        numJitter = new NumericUpDown
+        {
+            Left = 204, Top = 66, Width = 90,
+            Minimum = 0, Maximum = 60000, Increment = 250, Value = 2000,
+            BorderStyle = BorderStyle.FixedSingle
+        };
         grpGen.Controls.Add(numJitter);
 
-        grpGen.Controls.Add(new Label { Text = "Hatada yeniden deneme", Left = 330, Top = 64, Width = 150 });
-        numRetry = new NumericUpDown { Left = 485, Top = 60, Width = 60, Minimum = 0, Maximum = 5, Value = 2 };
+        grpGen.Controls.Add(new Label { Text = "Yeniden Deneme", Left = 330, Top = 70, Width = 120, ForeColor = Theme.Heading });
+        numRetry = new NumericUpDown
+        {
+            Left = 456, Top = 66, Width = 60,
+            Minimum = 0, Maximum = 5, Value = 2,
+            BorderStyle = BorderStyle.FixedSingle
+        };
         grpGen.Controls.Add(numRetry);
 
-        var btnSave = new Button { Text = "Ayarlari kaydet", Left = 14, Top = 95, Width = 140, Height = 28 };
-        btnSave.Click += (_, _) =>
-        {
-            ReadSettingsFromUi();
-            SettingsStore.Save(_settings);
-            lblStatus.Text = "Ayarlar kaydedildi.";
-            MessageBox.Show("Ayarlar kaydedildi.", "Bilgi", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        };
+        var btnSave = Theme.SoftButton("Ayarları Kaydet");
+        btnSave.SetBounds(16, 100, 150, 30);
+        btnSave.Click += (_, _) => SaveSettings(showMessage: true);
         grpGen.Controls.Add(btnSave);
+
+        var btnSaveReturn = Theme.PrimaryButton("Ayarları Kaydet ve Gönderime Dön");
+        btnSaveReturn.SetBounds(176, 100, 250, 30);
+        btnSaveReturn.Click += (_, _) =>
+        {
+            SaveSettings(showMessage: false);
+            tabs.SelectedIndex = 0;
+            lblStatus.Text = "Ayarlar kaydedildi.";
+        };
+        grpGen.Controls.Add(btnSaveReturn);
+
         page.Controls.Add(grpGen);
 
-        return page;
-    }
-
-    private static TabPage BuildHelpTab()
-    {
-        var page = new TabPage("Yardim") { Padding = new Padding(10) };
-        var box = new TextBox
-        {
-            Multiline = true,
-            ReadOnly = true,
-            Dock = DockStyle.Fill,
-            ScrollBars = ScrollBars.Vertical,
-            Font = new Font("Consolas", 9.5F),
-            Text = string.Join(Environment.NewLine, new[]
-            {
-                "HIZLI BASLANGIC",
-                "==============",
-                "",
-                "A) RESMI YOL - Meta Cloud API",
-                "   1. developers.facebook.com > My Apps > Create App > 'Business'",
-                "   2. Urunlerden WhatsApp'i ekleyin. Otomatik bir TEST numarasi verilir.",
-                "   3. API Setup ekranindan Phone Number ID ve Access Token'i kopyalayin.",
-                "   4. 'To' alanina kendi numaranizi ekleyip dogrulayin (en fazla 5 numara).",
-                "   5. Ayarlar sekmesine bu iki degeri yapistirin, 'Baglantiyi test et'e basin.",
-                "   6. Ilk mesaj SABLON olmali: 'Sablon mesaji gonder' kutusunu isaretleyip",
-                "      ad = hello_world, dil = en_US birakin.",
-                "   7. Alici size cevap verdikten sonra 24 saat boyunca SERBEST METIN",
-                "      gonderebilirsiniz (kutu isaretsiz).",
-                "",
-                "B) UCRETSIZ YOL - Yerel kopru (whatsapp-web.js)",
-                "   1. Node.js 18+ kurun.",
-                "   2. bridge klasorunde:  npm install   sonra   npm start",
-                "   3. Terminalde cikan QR kodu telefonunuzdan okutun.",
-                "   4. Ayarlar > Kopru durumunu sorgula -> 'hazir' yaziyorsa gonderebilirsiniz.",
-                "   NOT: Resmi olmayan yontemdir; numaranin engellenme riski vardir.",
-                "",
-                "C) KURULUMSUZ YOL - wa.me baglantisi",
-                "   Her alici icin WhatsApp penceresi acilir, GONDER'e siz basarsiniz.",
-                "   Gercek toplu gonderim icin uygun degildir.",
-                "",
-                "SIK KARSILASILAN HATALAR",
-                "========================",
-                "(131030) Recipient not in allowed list  -> test numarasina alici eklenmemis",
-                "(131047) Re-engagement message          -> 24 saatlik pencere kapali, sablon kullanin",
-                "(190)    Access token expired           -> gecici token'in suresi doldu",
-                "(132001) Template does not exist        -> sablon adi/dili yanlis",
-                "(80007 / 429) Rate limit                -> bekleme suresini artirin"
-            })
-        };
-        page.Controls.Add(box);
         return page;
     }
 
@@ -417,9 +453,16 @@ public sealed class MainForm : Form
         public override string ToString() => _label;
     }
 
-    // ==================================================================
-    //  AYAR OKU / YAZ
-    // ==================================================================
+    private void SaveSettings(bool showMessage)
+    {
+        ReadSettingsFromUi();
+        SettingsStore.Save(_settings);
+        lblStatus.Text = "Ayarlar kaydedildi.";
+        if (showMessage)
+            MessageBox.Show("Ayarlar kaydedildi.", "Bilgi",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
     private void LoadSettingsToUi()
     {
         txtPhoneNumberId.Text = _settings.PhoneNumberId;
@@ -431,6 +474,9 @@ public sealed class MainForm : Form
         numDelay.Value = Math.Clamp(_settings.DelayMs, (int)numDelay.Minimum, (int)numDelay.Maximum);
         numJitter.Value = Math.Clamp(_settings.JitterMs, (int)numJitter.Minimum, (int)numJitter.Maximum);
         numRetry.Value = Math.Clamp(_settings.MaxRetry, (int)numRetry.Minimum, (int)numRetry.Maximum);
+        numWebhookPort.Value = Math.Clamp(_settings.WebhookPort,
+            (int)numWebhookPort.Minimum, (int)numWebhookPort.Maximum);
+        txtWebhookToken.Text = _settings.WebhookVerifyToken;
 
         for (var i = 0; i < cmbProvider.Items.Count; i++)
             if (cmbProvider.Items[i] is ProviderItem p && p.Key == _settings.Provider)
@@ -450,6 +496,8 @@ public sealed class MainForm : Form
         _settings.DelayMs = (int)numDelay.Value;
         _settings.JitterMs = (int)numJitter.Value;
         _settings.MaxRetry = (int)numRetry.Value;
+        _settings.WebhookPort = (int)numWebhookPort.Value;
+        _settings.WebhookVerifyToken = txtWebhookToken.Text.Trim();
         _settings.Provider = CurrentProviderKey();
     }
 
@@ -482,19 +530,16 @@ public sealed class MainForm : Form
         if (cc.Length == 0) cc = "90";
         var list = PhoneUtils.Parse(txtRecipients.Text, cc);
         var valid = list.Count(r => r.IsValid);
-        lblRecipientCount.Text = $"{valid} gecerli / {list.Count} satir";
-        lblRecipientCount.ForeColor = valid == list.Count ? SystemColors.ControlText : Color.Firebrick;
+        lblRecipientCount.Text = $"{valid} geçerli / {list.Count} satır";
+        lblRecipientCount.ForeColor = valid == list.Count ? Theme.Muted : Theme.Danger;
     }
 
-    // ==================================================================
-    //  OLAYLAR
-    // ==================================================================
     private void BtnImport_Click(object? sender, EventArgs e)
     {
         using var dlg = new OpenFileDialog
         {
-            Filter = "Metin/CSV dosyalari (*.txt;*.csv)|*.txt;*.csv|Tum dosyalar (*.*)|*.*",
-            Title = "Alici listesi sec"
+            Filter = "Metin ve CSV dosyaları (*.txt;*.csv)|*.txt;*.csv|Tüm dosyalar (*.*)|*.*",
+            Title = "Alıcı Listesi Seç"
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
@@ -507,7 +552,7 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show("Dosya okunamadi: " + ex.Message, "Hata",
+            MessageBox.Show("Dosya okunamadı: " + ex.Message, "Hata",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -515,14 +560,14 @@ public sealed class MainForm : Form
     private async void BtnTestCloud_Click(object? sender, EventArgs e)
     {
         ReadSettingsFromUi();
-        var sender2 = new CloudApiSender(_settings);
-        var err = sender2.Validate();
-        if (err != null) { MessageBox.Show(err, "Eksik ayar"); return; }
+        var cloud = new CloudApiSender(_settings);
+        var err = cloud.Validate();
+        if (err != null) { MessageBox.Show(err, "Eksik Ayar"); return; }
 
-        var to = Prompt("Test mesaji hangi numaraya gonderilsin?\n(Cloud API test numarasinda bu numara onceden eklenmis olmali)", "");
+        var to = Prompt("Test mesajı hangi numaraya gönderilsin?", "");
         if (string.IsNullOrWhiteSpace(to)) return;
 
-        lblStatus.Text = "Test mesaji gonderiliyor...";
+        lblStatus.Text = "Test mesajı gönderiliyor...";
         var msg = new OutgoingMessage
         {
             Phone = PhoneUtils.Normalize(to, _settings.DefaultCountryCode),
@@ -530,12 +575,12 @@ public sealed class MainForm : Form
             TemplateName = "hello_world",
             LanguageCode = "en_US"
         };
-        var res = await sender2.SendAsync(msg, CancellationToken.None);
-        lblStatus.Text = res.Success ? "Test mesaji gonderildi." : "Test basarisiz.";
+        var res = await cloud.SendAsync(msg, CancellationToken.None);
+        lblStatus.Text = res.Success ? "Test mesajı gönderildi." : "Test başarısız.";
         MessageBox.Show(res.Success
-                ? $"Basarili. Mesaj ID: {res.MessageId}"
+                ? $"Başarılı. Mesaj kimliği: {res.MessageId}"
                 : "Hata: " + res.Error,
-            "Cloud API testi", MessageBoxButtons.OK,
+            "Cloud API Testi", MessageBoxButtons.OK,
             res.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
     }
 
@@ -543,11 +588,11 @@ public sealed class MainForm : Form
     {
         ReadSettingsFromUi();
         var b = new BridgeSender(_settings);
-        lblStatus.Text = "Kopru sorgulaniyor...";
+        lblStatus.Text = "Köprü sorgulanıyor...";
         var (ready, info) = await b.CheckStatusAsync(CancellationToken.None);
         lblStatus.Text = info;
-        MessageBox.Show(ready ? "Kopru hazir. " + info : "Kopru hazir degil. " + info,
-            "Kopru durumu", MessageBoxButtons.OK,
+        MessageBox.Show(ready ? "Köprü hazır. " + info : "Köprü hazır değil. " + info,
+            "Köprü Durumu", MessageBoxButtons.OK,
             ready ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }
 
@@ -558,14 +603,14 @@ public sealed class MainForm : Form
         var recipients = PhoneUtils.Parse(txtRecipients.Text, _settings.DefaultCountryCode);
         if (recipients.Count == 0)
         {
-            MessageBox.Show("Once alici ekleyin.", "Uyari", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Önce alıcı ekleyin.", "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         var useTemplate = chkTemplate.Checked && CurrentProviderKey() == "cloud";
         if (!useTemplate && string.IsNullOrWhiteSpace(txtMessage.Text))
         {
-            MessageBox.Show("Mesaj metni bos.", "Uyari", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Mesaj metni boş.", "Uyarı", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -573,13 +618,13 @@ public sealed class MainForm : Form
         var validationError = whatsappSender.Validate();
         if (validationError != null)
         {
-            MessageBox.Show(validationError, "Eksik ayar", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(validationError, "Eksik Ayar", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         var valid = recipients.Count(r => r.IsValid);
         var confirm = MessageBox.Show(
-            $"{valid} aliciya mesaj gonderilecek.\nYontem: {whatsappSender.DisplayName}\nDevam edilsin mi?",
+            $"{valid} alıcıya mesaj gönderilecek.\nYöntem: {whatsappSender.DisplayName}\nDevam edilsin mi?",
             "Onay", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
         if (confirm != DialogResult.Yes) return;
 
@@ -609,7 +654,7 @@ public sealed class MainForm : Form
         {
             AppendRow(r);
             if (progress.Value < progress.Maximum) progress.Value++;
-            lblStatus.Text = $"{progress.Value}/{progress.Maximum} islendi";
+            lblStatus.Text = $"{progress.Value} / {progress.Maximum} işlendi";
         });
 
         var engine = new BulkSender(whatsappSender, _settings);
@@ -619,18 +664,18 @@ public sealed class MainForm : Form
             var (sent, failed) = await engine.RunAsync(
                 recipients, txtMessage.Text, templateOptions, progressReporter, _cts.Token);
 
-            lblStatus.Text = $"Tamamlandi. Basarili: {sent}, Hatali: {failed}";
-            MessageBox.Show($"Gonderim tamamlandi.\n\nBasarili: {sent}\nHatali: {failed}",
+            lblStatus.Text = $"Tamamlandı. Başarılı: {sent}, Hatalı: {failed}";
+            MessageBox.Show($"Gönderim tamamlandı.\n\nBaşarılı: {sent}\nHatalı: {failed}",
                 "Bitti", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (OperationCanceledException)
         {
-            lblStatus.Text = "Kullanici tarafindan durduruldu.";
+            lblStatus.Text = "Gönderim durduruldu.";
         }
         catch (Exception ex)
         {
             lblStatus.Text = "Hata: " + ex.Message;
-            MessageBox.Show(ex.ToString(), "Beklenmeyen hata",
+            MessageBox.Show(ex.ToString(), "Beklenmeyen Hata",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
@@ -658,27 +703,30 @@ public sealed class MainForm : Form
             r.Phone,
             r.Name,
             r.Status,
+            "",
             r.MessageId,
             r.Error);
 
-        dgv.Rows[i].DefaultCellStyle.BackColor =
-            r.Success ? Color.FromArgb(230, 249, 236) : Color.FromArgb(253, 232, 232);
+        dgv.Rows[i].DefaultCellStyle.BackColor = r.Success ? Theme.RowSent : Theme.RowError;
         dgv.FirstDisplayedScrollingRowIndex = i;
+
+        if (!string.IsNullOrEmpty(r.MessageId) && r.MessageId.StartsWith("wamid.", StringComparison.Ordinal))
+            _rowByMessageId[r.MessageId] = i;
     }
 
     private void BtnExport_Click(object? sender, EventArgs e)
     {
-        if (dgv.Rows.Count == 0) { MessageBox.Show("Kaydedilecek satir yok."); return; }
+        if (dgv.Rows.Count == 0) { MessageBox.Show("Kaydedilecek satır yok."); return; }
 
         using var dlg = new SaveFileDialog
         {
-            Filter = "CSV dosyasi (*.csv)|*.csv",
+            Filter = "CSV dosyası (*.csv)|*.csv",
             FileName = $"gonderim_{DateTime.Now:yyyyMMdd_HHmm}.csv"
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
         var sb = new StringBuilder();
-        sb.AppendLine("No;Saat;Numara;Ad;Durum;MesajId;Aciklama");
+        sb.AppendLine("No;Saat;Numara;Ad;Durum;Teslim;MesajKimligi;Aciklama");
         foreach (DataGridViewRow row in dgv.Rows)
         {
             var cells = row.Cells.Cast<DataGridViewCell>()
@@ -690,22 +738,105 @@ public sealed class MainForm : Form
         lblStatus.Text = "CSV kaydedildi: " + dlg.FileName;
     }
 
-    /// <summary>Kucuk bir metin sorma penceresi (WinForms'ta hazir InputBox yok).</summary>
+    private void WireWebhook()
+    {
+        _webhook.Log += msg => BeginInvoke(() => AppendWebhookLog(msg));
+
+        _webhook.StatusReceived += st => BeginInvoke(() =>
+        {
+            AppendWebhookLog($"{st.Time:HH:mm:ss}  {st.Recipient}  →  {st.Turkish}" +
+                             (st.Error is null ? "" : "  | " + st.Error));
+            ApplyDeliveryStatus(st);
+        });
+
+        _webhook.MessageReceived += m => BeginInvoke(() =>
+        {
+            AppendWebhookLog($"{m.Time:HH:mm:ss}  GELEN  {m.From}: {m.Text}");
+            lblStatus.Text = $"{m.From} numarasından mesaj geldi, 24 saatlik pencere açıldı.";
+        });
+    }
+
+    private void BtnWebhookToggle_Click(object? sender, EventArgs e)
+    {
+        if (_webhook.IsRunning)
+        {
+            _webhook.Stop();
+            btnWebhookToggle.Text = "Webhook'u Başlat";
+            lblWebhookState.Text = "Durum: kapalı";
+            lblWebhookState.ForeColor = Theme.Muted;
+            AppendWebhookLog("Webhook durduruldu.");
+            return;
+        }
+
+        ReadSettingsFromUi();
+        try
+        {
+            _webhook.Start(_settings.WebhookPort, _settings.WebhookVerifyToken);
+            SettingsStore.Save(_settings);
+
+            btnWebhookToggle.Text = "Webhook'u Durdur";
+            lblWebhookState.Text =
+                $"Durum: çalışıyor   ·   http://localhost:{_settings.WebhookPort}/webhook" +
+                $"   ·   Dışarı açmak için:  ngrok http {_settings.WebhookPort}";
+            lblWebhookState.ForeColor = Theme.Primary;
+        }
+        catch (Exception ex)
+        {
+            AppendWebhookLog("Başlatılamadı: " + ex.Message);
+            MessageBox.Show(
+                "Webhook başlatılamadı: " + ex.Message +
+                "\n\nPort başka bir uygulama tarafından kullanılıyor olabilir. Farklı bir port deneyin.",
+                "Hata", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void ApplyDeliveryStatus(WebhookStatus st)
+    {
+        if (!_rowByMessageId.TryGetValue(st.MessageId, out var rowIndex)) return;
+        if (rowIndex < 0 || rowIndex >= dgv.Rows.Count) return;
+
+        var row = dgv.Rows[rowIndex];
+        row.Cells["c_delivery"].Value = st.Turkish;
+
+        if (!string.IsNullOrEmpty(st.Error))
+            row.Cells["c_error"].Value = st.Error;
+
+        row.DefaultCellStyle.BackColor = st.Status switch
+        {
+            "read" => Theme.RowRead,
+            "delivered" => Theme.RowDelivered,
+            "failed" => Theme.RowError,
+            _ => row.DefaultCellStyle.BackColor
+        };
+    }
+
+    private void AppendWebhookLog(string line)
+    {
+        if (txtWebhookLog.TextLength > 20000) txtWebhookLog.Clear();
+        txtWebhookLog.AppendText(line + Environment.NewLine);
+    }
+
     private string Prompt(string text, string defaultValue)
     {
         using var f = new Form
         {
-            Text = "Giris",
-            ClientSize = new Size(420, 140),
+            Text = "Giriş",
+            ClientSize = new Size(430, 150),
             FormBorderStyle = FormBorderStyle.FixedDialog,
             StartPosition = FormStartPosition.CenterParent,
             MinimizeBox = false,
-            MaximizeBox = false
+            MaximizeBox = false,
+            BackColor = Theme.Background,
+            Font = Theme.Body
         };
-        var lbl = new Label { Text = text, Left = 12, Top = 12, Width = 396, Height = 44 };
-        var tb = new TextBox { Left = 12, Top = 62, Width = 396, Text = defaultValue };
-        var ok = new Button { Text = "Tamam", Left = 232, Top = 96, Width = 80, DialogResult = DialogResult.OK };
-        var cancel = new Button { Text = "Iptal", Left = 320, Top = 96, Width = 80, DialogResult = DialogResult.Cancel };
+        var lbl = new Label { Text = text, Left = 14, Top = 16, Width = 400, Height = 40, ForeColor = Theme.Heading };
+        var tb = new TextBox { Left = 14, Top = 62, Width = 400, Text = defaultValue, BorderStyle = BorderStyle.FixedSingle };
+        var ok = Theme.PrimaryButton("Tamam");
+        ok.SetBounds(238, 100, 84, 30);
+        ok.DialogResult = DialogResult.OK;
+        var cancel = Theme.SoftButton("İptal");
+        cancel.SetBounds(330, 100, 84, 30);
+        cancel.DialogResult = DialogResult.Cancel;
         f.Controls.AddRange(new Control[] { lbl, tb, ok, cancel });
         f.AcceptButton = ok;
         f.CancelButton = cancel;
@@ -716,11 +847,13 @@ public sealed class MainForm : Form
     {
         if (_cts is { IsCancellationRequested: false } && btnStop.Enabled)
         {
-            var r = MessageBox.Show("Gonderim devam ediyor. Kapatilsin mi?", "Uyari",
+            var r = MessageBox.Show("Gönderim devam ediyor. Kapatılsın mı?", "Uyarı",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (r == DialogResult.No) { e.Cancel = true; return; }
             _cts.Cancel();
         }
+
+        _webhook.Dispose();
 
         ReadSettingsFromUi();
         SettingsStore.Save(_settings);

@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -6,14 +6,6 @@ using WhatsAppSenderDemo.Models;
 
 namespace WhatsAppSenderDemo.Services;
 
-/// <summary>
-/// UCRETSIZ YOL: bilgisayarda calisan Node.js koprusu (whatsapp-web.js).
-/// Kopru, kendi WhatsApp hesabinizla WhatsApp Web oturumu acar; WinForms
-/// uygulamasi ona basit bir HTTP istegi yollar.
-///
-/// DIKKAT: Resmi olmayan yontemdir, WhatsApp kullanim sartlarina aykiridir
-/// ve numaranin engellenmesi riski vardir. Test/ic kullanim icindir.
-/// </summary>
 public sealed class BridgeSender : IWhatsAppSender
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
@@ -21,18 +13,17 @@ public sealed class BridgeSender : IWhatsAppSender
 
     public BridgeSender(AppSettings settings) => _s = settings;
 
-    public string DisplayName => "Yerel kopru - whatsapp-web.js (ucretsiz)";
+    public string DisplayName => "Yerel Köprü";
 
     public string? Validate()
     {
         if (string.IsNullOrWhiteSpace(_s.BridgeUrl))
-            return "Kopru adresi bos olamaz (orn. http://localhost:3000).";
+            return "Köprü adresi boş olamaz.";
         if (!Uri.TryCreate(_s.BridgeUrl, UriKind.Absolute, out _))
-            return "Kopru adresi gecerli bir URL degil.";
+            return "Köprü adresi geçerli bir URL değil.";
         return null;
     }
 
-    /// <summary>Kopru ayakta mi ve WhatsApp oturumu acik mi?</summary>
     public async Task<(bool Ready, string Info)> CheckStatusAsync(CancellationToken ct)
     {
         try
@@ -49,7 +40,7 @@ public sealed class BridgeSender : IWhatsAppSender
         }
         catch (Exception ex)
         {
-            return (false, "Koprüye ulasilamadi: " + ex.Message);
+            return (false, "Köprüye ulaşılamadı: " + ex.Message);
         }
     }
 
@@ -87,11 +78,11 @@ public sealed class BridgeSender : IWhatsAppSender
         }
         catch (TaskCanceledException) when (!ct.IsCancellationRequested)
         {
-            return SendOutcome.Fail("Zaman asimi", retryable: true);
+            return SendOutcome.Fail("Zaman aşımı", retryable: true);
         }
         catch (HttpRequestException ex)
         {
-            return SendOutcome.Fail("Kopruye baglanilamadi: " + ex.Message, retryable: true);
+            return SendOutcome.Fail("Köprüye bağlanılamadı: " + ex.Message, retryable: true);
         }
     }
 

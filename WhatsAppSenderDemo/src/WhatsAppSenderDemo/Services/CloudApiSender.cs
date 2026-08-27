@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -7,43 +7,34 @@ using WhatsAppSenderDemo.Models;
 
 namespace WhatsAppSenderDemo.Services;
 
-/// <summary>
-/// RESMI YOL: Meta WhatsApp Cloud API.
-/// POST https://graph.facebook.com/{version}/{phone-number-id}/messages
-/// Authorization: Bearer {access-token}
-/// </summary>
 public sealed class CloudApiSender : IWhatsAppSender
 {
-    private static readonly HttpClient Http = new()
-    {
-        Timeout = TimeSpan.FromSeconds(30)
-    };
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
 
     private readonly AppSettings _s;
 
     public CloudApiSender(AppSettings settings) => _s = settings;
 
-    public string DisplayName => "Meta Cloud API (resmi)";
+    public string DisplayName => "Meta Cloud API";
 
     public string? Validate()
     {
         if (string.IsNullOrWhiteSpace(_s.PhoneNumberId))
-            return "Ayarlar sekmesinde 'Phone Number ID' bos birakilamaz.";
+            return "Ayarlar sekmesinde Telefon Numarası Kimliği boş bırakılamaz.";
         if (string.IsNullOrWhiteSpace(_s.AccessToken))
-            return "Ayarlar sekmesinde 'Access Token' bos birakilamaz.";
+            return "Ayarlar sekmesinde Erişim Anahtarı boş bırakılamaz.";
         if (string.IsNullOrWhiteSpace(_s.ApiVersion))
-            return "API surumu bos birakilamaz (orn. v21.0).";
+            return "Graph API sürümü boş bırakılamaz.";
         return null;
     }
 
     public async Task<SendOutcome> SendAsync(OutgoingMessage message, CancellationToken ct)
     {
         var url = $"https://graph.facebook.com/{_s.ApiVersion}/{_s.PhoneNumberId}/messages";
-        var json = BuildBody(message);
 
         using var req = new HttpRequestMessage(HttpMethod.Post, url);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _s.AccessToken);
-        req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        req.Content = new StringContent(BuildBody(message), Encoding.UTF8, "application/json");
 
         try
         {
@@ -60,20 +51,18 @@ public sealed class CloudApiSender : IWhatsAppSender
         }
         catch (TaskCanceledException) when (!ct.IsCancellationRequested)
         {
-            return SendOutcome.Fail("Zaman asimi (30 sn)", retryable: true);
+            return SendOutcome.Fail("Zaman aşımı", retryable: true);
         }
         catch (HttpRequestException ex)
         {
-            return SendOutcome.Fail("Ag hatasi: " + ex.Message, retryable: true);
+            return SendOutcome.Fail("Ağ hatası: " + ex.Message, retryable: true);
         }
     }
 
-    /// <summary>Cloud API'nin bekledigi JSON govdesini uretir.</summary>
     private static string BuildBody(OutgoingMessage m)
     {
         if (!m.UseTemplate)
         {
-            // Serbest metin: SADECE 24 saatlik musteri hizmeti penceresi acikken calisir.
             var payload = new
             {
                 messaging_product = "whatsapp",
@@ -85,7 +74,6 @@ public sealed class CloudApiSender : IWhatsAppSender
             return JsonSerializer.Serialize(payload);
         }
 
-        // Sablon: pencere kapaliyken / ilk temasta zorunlu yol.
         object template = m.TemplateParameters.Count == 0
             ? new
             {
@@ -128,7 +116,7 @@ public sealed class CloudApiSender : IWhatsAppSender
                 msgs[0].TryGetProperty("id", out var id))
                 return id.GetString();
         }
-        catch (JsonException) { /* yok say */ }
+        catch (JsonException) { }
         return null;
     }
 
@@ -146,7 +134,7 @@ public sealed class CloudApiSender : IWhatsAppSender
                 return $"[{code}] {msg} {det}".Trim();
             }
         }
-        catch (JsonException) { /* yok say */ }
+        catch (JsonException) { }
         return body.Length > 300 ? body[..300] : body;
     }
 }

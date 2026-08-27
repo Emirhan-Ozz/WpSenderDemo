@@ -77,6 +77,27 @@ Metin kutusuna satır başına bir numara yazın veya `Dosyadan yükle` ile CSV 
 Ülke kodu yoksa Ayarlar'daki kod (varsayılan `90`) otomatik eklenir.
 Mesajda `{ad}` ve `{tel}` yer tutucuları kullanılabilir.
 
+## Webhook — teslim durumu (isteğe bağlı)
+
+Cloud API'de `200 OK` yalnızca "Meta mesajı kabul etti" demektir. Mesajın gerçekten
+ulaşıp ulaşmadığını ancak webhook söyler. Uygulama bunu kendi içinde barındırır
+(`Services/WebhookServer.cs`, ayrı proje gerekmez):
+
+1. **Ayarlar → Webhook** bölümünde port (`5005`) ve verify token'ı belirleyip **Webhook'u başlat**
+2. Ayrı bir terminalde tüneli açın:
+   ```bash
+   ngrok http 5005
+   ```
+3. ngrok'un verdiği `https://xxxx.ngrok-free.app` adresini kopyalayın
+4. Meta → uygulamanız → **WhatsApp → Configuration → Webhooks → Edit**
+   - **Callback URL:** `https://xxxx.ngrok-free.app/webhook`
+   - **Verify token:** Ayarlar'daki token ile birebir aynı
+5. **Verify and save** → sonra `messages` alanına **Subscribe**
+
+Artık sonuç tablosundaki **Teslim** sütunu canlı güncellenir:
+`İletildi → Ulaştı → Okundu`, hata varsa `Başarısız` ve sebebi. Gelen mesajlar da
+webhook günlüğüne düşer — o an alıcının 24 saatlik penceresi açılmış demektir.
+
 ## Uyarılar
 - **Access token'ı asla kaynak koda / git'e koymayın.** Uygulama token'ı `%APPDATA%\WhatsAppSenderDemo\settings.json` içinde Windows DPAPI ile şifreleyerek saklar.
 - whatsapp-web.js resmî değildir; WhatsApp kullanım şartlarına aykırıdır ve numara engellenebilir.

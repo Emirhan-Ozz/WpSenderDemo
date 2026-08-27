@@ -1,15 +1,10 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using WhatsAppSenderDemo.Models;
 
 namespace WhatsAppSenderDemo.Services;
 
-/// <summary>
-/// Ayarlari %APPDATA%\WhatsAppSenderDemo\settings.json dosyasina yazar.
-/// Access token DPAPI (CurrentUser) ile sifrelenir; baska kullanici okuyamaz.
-/// Token'i ASLA kaynak koda veya git'e koymayin.
-/// </summary>
 public static class SettingsStore
 {
     private static readonly string Dir = Path.Combine(
@@ -19,6 +14,8 @@ public static class SettingsStore
     private static readonly string FilePath = Path.Combine(Dir, "settings.json");
 
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
+
+    private const string Prefix = "dpapi:";
 
     public static AppSettings Load()
     {
@@ -41,15 +38,12 @@ public static class SettingsStore
     {
         Directory.CreateDirectory(Dir);
 
-        // Kopyasini sifreli token ile yaz, bellekteki nesneyi bozma
         var copy = JsonSerializer.Deserialize<AppSettings>(
                        JsonSerializer.Serialize(settings))!;
         copy.AccessToken = Protect(settings.AccessToken);
 
         File.WriteAllText(FilePath, JsonSerializer.Serialize(copy, JsonOpts));
     }
-
-    private const string Prefix = "dpapi:";
 
     private static string Protect(string plain)
     {
@@ -62,7 +56,7 @@ public static class SettingsStore
         }
         catch
         {
-            return plain; // sifreleme mumkun degilse duz yaz (nadiren)
+            return plain;
         }
     }
 
