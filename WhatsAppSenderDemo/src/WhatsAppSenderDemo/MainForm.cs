@@ -84,7 +84,7 @@ public sealed class MainForm : Form
 
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 142));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
 
         var top = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
@@ -164,14 +164,28 @@ public sealed class MainForm : Form
         var mid = Theme.Group("Gönderim Ayarları");
         mid.Dock = DockStyle.Fill;
         var midPanel = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
+        var actions = new Panel { Dock = DockStyle.Right, Width = 152, BackColor = Theme.Surface };
 
         midPanel.Controls.Add(new Label
         {
-            Text = "Yöntem", Left = 4, Top = 10, Width = 55, ForeColor = Theme.Heading
+            Text = "Yöntem",
+            Left = 4,
+            Top = 10,
+            Width = 55,
+            ForeColor = Theme.Heading
         });
+        var cmbFrame = new Panel
+        {
+            Left = 62,
+            Top = 6,
+            Width = 280,
+            Height = 25,
+            BackColor = Theme.Border,
+            Padding = new Padding(1)
+        };
         cmbProvider = new ComboBox
         {
-            Left = 62, Top = 6, Width = 310,
+            Dock = DockStyle.Fill,
             DropDownStyle = ComboBoxStyle.DropDownList,
             FlatStyle = FlatStyle.Flat,
             BackColor = Theme.Surface
@@ -183,16 +197,26 @@ public sealed class MainForm : Form
             new ProviderItem("walink", "wa.me Bağlantısı")
         });
         cmbProvider.SelectedIndexChanged += (_, _) => UpdateProviderUi();
-        midPanel.Controls.Add(cmbProvider);
+        cmbFrame.Controls.Add(cmbProvider);
+        midPanel.Controls.Add(cmbFrame);
 
         midPanel.Controls.Add(new Label
         {
-            Text = "Bekleme (ms)", Left = 392, Top = 10, Width = 90, ForeColor = Theme.Heading
+            Text = "Bekleme (ms)",
+            Left = 356,
+            Top = 10,
+            Width = 90,
+            ForeColor = Theme.Heading
         });
         numDelay = new NumericUpDown
         {
-            Left = 486, Top = 6, Width = 90,
-            Minimum = 0, Maximum = 600000, Increment = 500, Value = 4000,
+            Left = 450,
+            Top = 6,
+            Width = 80,
+            Minimum = 0,
+            Maximum = 600000,
+            Increment = 500,
+            Value = 4000,
             BorderStyle = BorderStyle.FixedSingle
         };
         midPanel.Controls.Add(numDelay);
@@ -200,52 +224,65 @@ public sealed class MainForm : Form
         chkTemplate = new CheckBox
         {
             Text = "Şablon mesajı gönder",
-            Left = 4, Top = 46, Width = 165,
+            Left = 4,
+            Top = 46,
+            Width = 160,
             ForeColor = Theme.Heading
         };
         chkTemplate.CheckedChanged += (_, _) => UpdateProviderUi();
         midPanel.Controls.Add(chkTemplate);
 
-        midPanel.Controls.Add(new Label { Text = "Ad", Left = 178, Top = 48, Width = 24, ForeColor = Theme.Heading });
-        txtTemplateName = new TextBox { Left = 204, Top = 44, Width = 150, BorderStyle = BorderStyle.FixedSingle };
+        midPanel.Controls.Add(new Label { Text = "Ad", Left = 170, Top = 48, Width = 24, ForeColor = Theme.Heading });
+        txtTemplateName = new TextBox { Left = 196, Top = 44, Width = 140, BorderStyle = BorderStyle.FixedSingle };
         midPanel.Controls.Add(txtTemplateName);
 
-        midPanel.Controls.Add(new Label { Text = "Dil", Left = 364, Top = 48, Width = 24, ForeColor = Theme.Heading });
-        txtTemplateLang = new TextBox { Left = 390, Top = 44, Width = 60, BorderStyle = BorderStyle.FixedSingle, Text = "tr" };
+        midPanel.Controls.Add(new Label { Text = "Dil", Left = 344, Top = 48, Width = 24, ForeColor = Theme.Heading });
+        txtTemplateLang = new TextBox { Left = 370, Top = 44, Width = 50, BorderStyle = BorderStyle.FixedSingle, Text = "tr" };
         midPanel.Controls.Add(txtTemplateLang);
 
-        midPanel.Controls.Add(new Label { Text = "Parametreler", Left = 462, Top = 48, Width = 82, ForeColor = Theme.Heading });
+        midPanel.Controls.Add(new Label { Text = "Parametreler", Left = 430, Top = 48, Width = 82, ForeColor = Theme.Heading });
         txtTemplateParams = new TextBox
         {
-            Left = 548, Top = 44, Width = 220,
+            Left = 514,
+            Top = 44,
+            Width = 180,
             BorderStyle = BorderStyle.FixedSingle,
             PlaceholderText = "{ad}|12345"
         };
         midPanel.Controls.Add(txtTemplateParams);
 
-        btnSend = Theme.PrimaryButton("Gönder");
-        btnSend.SetBounds(806, 4, 120, 34);
-        btnSend.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        btnSend.Click += BtnSend_Click;
-        midPanel.Controls.Add(btnSend);
-
-        btnStop = Theme.DangerButton("Durdur");
-        btnStop.SetBounds(806, 44, 120, 30);
-        btnStop.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        btnStop.Enabled = false;
-        btnStop.Click += (_, _) => _cts?.Cancel();
-        midPanel.Controls.Add(btnStop);
-
         progress = new ProgressBar
         {
-            Left = 4, Top = 84, Width = 920, Height = 14,
-            Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right,
+            Dock = DockStyle.Bottom,
+            Height = 16,
             ForeColor = Theme.Primary,
             Style = ProgressBarStyle.Continuous
         };
         midPanel.Controls.Add(progress);
 
+        btnSend = Theme.PrimaryButton("Gönder");
+        btnSend.SetBounds(10, 2, 134, 38);
+        btnSend.Font = new Font("Segoe UI Semibold", 11F);
+        btnSend.Click += BtnSend_Click;
+        actions.Controls.Add(btnSend);
+
+        btnStop = Theme.DangerButton("Durdur");
+        btnStop.SetBounds(10, 46, 134, 38);
+        btnStop.Font = new Font("Segoe UI Semibold", 11F);
+        btnStop.Click += (_, _) =>
+        {
+            if (_cts is null)
+            {
+                lblStatus.Text = "Devam eden bir gönderim yok.";
+                return;
+            }
+            _cts.Cancel();
+            lblStatus.Text = "Gönderim durduruluyor...";
+        };
+        actions.Controls.Add(btnStop);
+
         mid.Controls.Add(midPanel);
+        mid.Controls.Add(actions);
 
         var grpLog = Theme.Group("Sonuçlar");
         grpLog.Dock = DockStyle.Fill;
@@ -364,8 +401,12 @@ public sealed class MainForm : Form
         grpHook.Controls.Add(new Label { Text = "Yerel Port", Left = 16, Top = 34, Width = 180, ForeColor = Theme.Heading });
         numWebhookPort = new NumericUpDown
         {
-            Left = 204, Top = 30, Width = 90,
-            Minimum = 1024, Maximum = 65535, Value = 5005,
+            Left = 204,
+            Top = 30,
+            Width = 90,
+            Minimum = 1024,
+            Maximum = 65535,
+            Value = 5005,
             BorderStyle = BorderStyle.FixedSingle
         };
         grpHook.Controls.Add(numWebhookPort);
@@ -381,7 +422,10 @@ public sealed class MainForm : Form
 
         lblWebhookState = new Label
         {
-            Left = 16, Top = 66, Width = 880, Height = 18,
+            Left = 16,
+            Top = 66,
+            Width = 880,
+            Height = 18,
             Text = "Durum: kapalı",
             ForeColor = Theme.Muted
         };
@@ -389,8 +433,13 @@ public sealed class MainForm : Form
 
         txtWebhookLog = new TextBox
         {
-            Left = 16, Top = 92, Width = 880, Height = 132,
-            Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
+            Left = 16,
+            Top = 92,
+            Width = 880,
+            Height = 132,
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
             Font = new Font("Consolas", 8.5F),
             BackColor = Theme.Surface,
             BorderStyle = BorderStyle.FixedSingle
@@ -410,8 +459,13 @@ public sealed class MainForm : Form
         grpGen.Controls.Add(new Label { Text = "Rastgele Sapma (ms)", Left = 16, Top = 70, Width = 180, ForeColor = Theme.Heading });
         numJitter = new NumericUpDown
         {
-            Left = 204, Top = 66, Width = 90,
-            Minimum = 0, Maximum = 60000, Increment = 250, Value = 2000,
+            Left = 204,
+            Top = 66,
+            Width = 90,
+            Minimum = 0,
+            Maximum = 60000,
+            Increment = 250,
+            Value = 2000,
             BorderStyle = BorderStyle.FixedSingle
         };
         grpGen.Controls.Add(numJitter);
@@ -419,8 +473,12 @@ public sealed class MainForm : Form
         grpGen.Controls.Add(new Label { Text = "Yeniden Deneme", Left = 330, Top = 70, Width = 120, ForeColor = Theme.Heading });
         numRetry = new NumericUpDown
         {
-            Left = 456, Top = 66, Width = 60,
-            Minimum = 0, Maximum = 5, Value = 2,
+            Left = 456,
+            Top = 66,
+            Width = 60,
+            Minimum = 0,
+            Maximum = 5,
+            Value = 2,
             BorderStyle = BorderStyle.FixedSingle
         };
         grpGen.Controls.Add(numRetry);
@@ -689,7 +747,7 @@ public sealed class MainForm : Form
     private void SetBusy(bool busy)
     {
         btnSend.Enabled = !busy;
-        btnStop.Enabled = busy;
+        btnSend.BackColor = busy ? Theme.PrimaryMuted : Theme.Primary;
         cmbProvider.Enabled = !busy;
         txtRecipients.ReadOnly = busy;
         Cursor = busy ? Cursors.AppStarting : Cursors.Default;
@@ -845,7 +903,7 @@ public sealed class MainForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (_cts is { IsCancellationRequested: false } && btnStop.Enabled)
+        if (_cts is { IsCancellationRequested: false })
         {
             var r = MessageBox.Show("Gönderim devam ediyor. Kapatılsın mı?", "Uyarı",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning);

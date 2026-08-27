@@ -9,6 +9,7 @@ internal static class Theme
     public static readonly Color Surface = Color.White;
     public static readonly Color Primary = Color.FromArgb(45, 108, 223);
     public static readonly Color PrimaryHover = Color.FromArgb(32, 88, 194);
+    public static readonly Color PrimaryMuted = Color.FromArgb(148, 178, 232);
     public static readonly Color Danger = Color.FromArgb(214, 69, 69);
     public static readonly Color DangerHover = Color.FromArgb(186, 52, 52);
     public static readonly Color Soft = Color.FromArgb(226, 236, 252);
